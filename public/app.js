@@ -267,45 +267,57 @@ function formatDate(val) {
 }
 
 function createHistoryItemElement(docId, data) {
-  const badge = data.isPipeline ? '⚡ Pipeline' : data.inputType === 'repo' ? '🔬 Repo Doctor' : '💬 Answer';
+  const isPipeline = data.isPipeline || !!(data.inspectorOutput || data.refactorOutput || data.reviewOutput);
+  const badge = isPipeline ? '⚡ Pipeline' : data.inputType === 'repo' ? '🔬 Repo Doctor' : '💬 Answer';
   const dateStr = formatDate(data.createdAt);
+
+  const userText = data.userText || data.prompt || (data.role === 'user' ? data.text : '') || '';
+  const aiText   = data.aiText || data.response || (data.role === 'assistant' ? data.text : '') || (data.text && !userText ? data.text : '') || '';
 
   const item = document.createElement('div');
   item.className = 'history-item expanded';
   item.dataset.docId = docId;
 
   // Render User Input Code/Question
-  const userTextHtml = data.userText ? `
+  const userTextHtml = userText ? `
     <div class="history-section">
       <div class="history-section-title">👤 Input Code / Question</div>
-      <div class="history-code-block"><pre><code>${escapeHtml(data.userText)}</code></pre></div>
+      <div class="history-code-block"><pre><code>${escapeHtml(userText)}</code></pre></div>
     </div>` : '';
 
   // Render AI Output
   let aiOutputHtml = '';
-  if (data.isPipeline) {
+  if (isPipeline) {
     aiOutputHtml = `
       <div class="history-section">
         <div class="history-section-title">⚡ Doctor Triage Pipeline Report</div>
         <div class="history-pipeline-box inspector">
           <div class="hp-box-title">🔍 Code Inspector Report</div>
-          <div class="hp-box-content">${window.marked ? window.marked.parse(data.inspectorOutput || '') : escapeHtml(data.inspectorOutput || '')}</div>
+          <div class="hp-box-content">${window.marked ? window.marked.parse(data.inspectorOutput || 'N/A') : escapeHtml(data.inspectorOutput || 'N/A')}</div>
         </div>
         <div class="history-pipeline-box refactor">
           <div class="hp-box-title">🛠️ Refactored Code</div>
-          <div class="hp-box-content">${window.marked ? window.marked.parse(data.refactorOutput || '') : escapeHtml(data.refactorOutput || '')}</div>
+          <div class="hp-box-content">${window.marked ? window.marked.parse(data.refactorOutput || 'N/A') : escapeHtml(data.refactorOutput || 'N/A')}</div>
         </div>
         <div class="history-pipeline-box review">
           <div class="hp-box-title">📝 Review & Verdict Report</div>
-          <div class="hp-box-content">${window.marked ? window.marked.parse(data.reviewOutput || '') : escapeHtml(data.reviewOutput || '')}</div>
+          <div class="hp-box-content">${window.marked ? window.marked.parse(data.reviewOutput || 'N/A') : escapeHtml(data.reviewOutput || 'N/A')}</div>
         </div>
       </div>
     `;
-  } else if (data.aiText) {
+  } else if (aiText) {
     aiOutputHtml = `
       <div class="history-section">
         <div class="history-section-title">🤖 AI Diagnosis</div>
-        <div class="history-ai-content">${window.marked ? window.marked.parse(data.aiText) : escapeHtml(data.aiText)}</div>
+        <div class="history-ai-content">${window.marked ? window.marked.parse(aiText) : escapeHtml(aiText)}</div>
+      </div>
+    `;
+  } else if (!userTextHtml) {
+    const rawContent = typeof data.text === 'string' ? data.text : JSON.stringify(data, null, 2);
+    aiOutputHtml = `
+      <div class="history-section">
+        <div class="history-section-title">📄 Saved Content</div>
+        <div class="history-ai-content">${window.marked ? window.marked.parse(rawContent) : escapeHtml(rawContent)}</div>
       </div>
     `;
   }
@@ -326,6 +338,7 @@ function createHistoryItemElement(docId, data) {
       ${aiOutputHtml}
     </div>
   `;
+
 
   // Toggle Collapse / Expand
   const toggleBtn = item.querySelector('.history-toggle-btn');
