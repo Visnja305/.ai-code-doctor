@@ -799,4 +799,23 @@ body {
   background: #fafbfc;
 }
 
+.history-preview-bar {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  padding: 2px 0;
+  transition: color 0.15s ease;
+}
+
+.history-preview-bar:hover {
+  color: var(--text);
+}
+
+
 
