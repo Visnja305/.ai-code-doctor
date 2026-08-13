@@ -639,6 +639,9 @@ function handleAuthForm(e) {
   ui.authError.classList.add('hidden');
   ui.authSubmit.disabled = true;
   promise
+    .then(cred => {
+      if (cred && cred.user) ensureUserDoc(cred.user);
+    })
     .catch(err => {
       let msg = 'Unable to log in. Please check your details.';
       if (err.code === 'auth/email-already-in-use')                             msg = 'That email is already registered. Log in instead.';
