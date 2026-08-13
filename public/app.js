@@ -206,7 +206,8 @@ function setBusy(state) {
 
 function getUserKey(user) {
   if (!user) return null;
-  return user.email || user.uid;
+  const key = user.email || user.uid;
+  return key ? key.toLowerCase() : null;
 }
 
 function addActionButtons(elements, exchangeData) {
@@ -596,8 +597,9 @@ async function handleSend(text) {
 
 async function ensureUserDoc(user) {
   if (!user || !user.email) return;
+  const userKey = user.email.toLowerCase();
   try {
-    const userDocRef = db.collection('users').doc(user.email);
+    const userDocRef = db.collection('users').doc(userKey);
     await userDocRef.set({
       email: user.email,
       uid: user.uid,
