@@ -230,7 +230,6 @@ function addActionButtons(elements, exchangeData) {
         ...exchangeData
       });
       saveBtn.textContent = '✓ Saved!';
-      // Add immediately to the history panel (no reload needed)
       renderHistoryItem(ref.id, { ...exchangeData, createdAt: new Date() }, true);
       setTimeout(() => el.remove(), 1200);
     } catch (e) {
@@ -274,8 +273,10 @@ function createHistoryItemElement(docId, data) {
   const userText = data.userText || data.prompt || (data.role === 'user' ? data.text : '') || '';
   const aiText   = data.aiText || data.response || (data.role === 'assistant' ? data.text : '') || (data.text && !userText ? data.text : '') || '';
 
+  const previewText = userText ? (userText.slice(0, 90) + (userText.length > 90 ? '…' : '')) : (aiText.slice(0, 90) || 'Saved Analysis');
+
   const item = document.createElement('div');
-  item.className = 'history-item expanded';
+  item.className = 'history-item'; // Collapsed by default
   item.dataset.docId = docId;
 
   // Render User Input Code/Question
@@ -329,32 +330,39 @@ function createHistoryItemElement(docId, data) {
         <span class="history-date">${dateStr}</span>
       </div>
       <div class="history-item-actions">
-        <button class="history-toggle-btn" type="button">Collapse</button>
+        <button class="history-toggle-btn" type="button">Expand</button>
         <button class="history-delete-btn" type="button" title="Delete this saved item">🗑 Delete</button>
       </div>
     </div>
-    <div class="history-item-body">
+    <div class="history-preview-bar">${escapeHtml(previewText)}</div>
+    <div class="history-item-body" style="display: none;">
       ${userTextHtml}
       ${aiOutputHtml}
     </div>
   `;
 
-
   // Toggle Collapse / Expand
   const toggleBtn = item.querySelector('.history-toggle-btn');
   const bodyEl = item.querySelector('.history-item-body');
-  toggleBtn.addEventListener('click', () => {
+  const previewEl = item.querySelector('.history-preview-bar');
+
+  const toggleExpand = () => {
     const isExpanded = item.classList.contains('expanded');
     if (isExpanded) {
       item.classList.remove('expanded');
       bodyEl.style.display = 'none';
+      if (previewEl) previewEl.style.display = 'block';
       toggleBtn.textContent = 'Expand';
     } else {
       item.classList.add('expanded');
       bodyEl.style.display = 'block';
+      if (previewEl) previewEl.style.display = 'none';
       toggleBtn.textContent = 'Collapse';
     }
-  });
+  };
+
+  toggleBtn.addEventListener('click', toggleExpand);
+  if (previewEl) previewEl.addEventListener('click', toggleExpand);
 
   // Delete Action
   const delBtn = item.querySelector('.history-delete-btn');
@@ -405,6 +413,7 @@ async function loadSavedHistory(uid) {
     ui.historyList.innerHTML = '<p class="history-empty">Failed to load history.</p>';
   }
 }
+
 
 function openHistoryPanel() {
   const user = auth.currentUser;
