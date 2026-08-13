@@ -56,12 +56,17 @@ function friendlyError(err) {
 }
 
 async function callGemini(systemPrompt, userText) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${APP_CONFIG.GEMINI_MODEL}:generateContent?key=${APP_CONFIG.GEMINI_API_KEY}`;
+  const model = APP_CONFIG.GEMINI_MODEL || 'gemini-1.5-flash';
+  const key = APP_CONFIG.GEMINI_API_KEY;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+
   let res;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userText }] }]
@@ -79,12 +84,10 @@ async function callGemini(systemPrompt, userText) {
   }
   const data = await res.json();
   const text = (data.candidates || [])[0]?.content?.parts?.map(p => p.text).join('') || '';
-  if (!text) {
-    const err = new Error('Empty response from AI');
-    throw err;
-  }
+  if (!text) throw new Error('Empty response from AI');
   return text;
 }
+
 
 function parseOrchestratorReply(text) {
   const lines = text.split('\n');
