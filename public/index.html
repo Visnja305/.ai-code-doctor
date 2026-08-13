@@ -36,6 +36,7 @@
         <span>AI Code Doctor</span>
       </div>
       <div class="chat-actions">
+        <button id="history-btn" class="ghost-btn" type="button">📚 Saved History</button>
         <span id="quota-label" class="quota"></span>
         <span id="user-email" class="user-email"></span>
         <button id="signout-btn" class="ghost-btn" type="button">Sign out</button>
@@ -46,6 +47,16 @@
       <textarea id="chat-input" rows="1" placeholder="Paste a code snippet, a public GitHub repo URL, or ask about your code…"></textarea>
       <button id="send-btn" class="primary-btn" type="submit">Send</button>
     </form>
+
+    <!-- Saved History Drawer / Modal -->
+    <div id="history-panel" class="history-panel hidden">
+      <div class="history-panel-header">
+        <h2>📚 Saved History</h2>
+        <button id="close-history-btn" class="ghost-btn" type="button">✕ Close</button>
+      </div>
+      <div id="history-list" class="history-list"></div>
+    </div>
+
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>

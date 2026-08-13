@@ -4,7 +4,6 @@ let auth = null;
 let db = null;
 let candidates = [];
 let routingCandidates = [];
-let snapshotUnsub = null;
 let busy = false;
 
 const ui = {
@@ -23,8 +22,14 @@ const ui = {
   sendBtn: document.getElementById('send-btn'),
   signoutBtn: document.getElementById('signout-btn'),
   userEmail: document.getElementById('user-email'),
-  quotaLabel: document.getElementById('quota-label')
+  quotaLabel: document.getElementById('quota-label'),
+  historyBtn: document.getElementById('history-btn'),
+  historyPanel: document.getElementById('history-panel'),
+  historyList: document.getElementById('history-list'),
+  closeHistoryBtn: document.getElementById('close-history-btn')
 };
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function normalizeName(s) {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -55,8 +60,10 @@ function friendlyError(err) {
   return 'Something went wrong. Please try again.';
 }
 
+// ── AI Call ───────────────────────────────────────────────────────────────────
+
 async function callGemini(systemPrompt, userText) {
-  const model = APP_CONFIG.GEMINI_MODEL || 'gemini-1.5-flash';
+  const model = APP_CONFIG.GEMINI_MODEL || 'gemini-flash-lite-latest';
   const key = APP_CONFIG.GEMINI_API_KEY;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
@@ -64,9 +71,7 @@ async function callGemini(systemPrompt, userText) {
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userText }] }]
@@ -88,6 +93,7 @@ async function callGemini(systemPrompt, userText) {
   return text;
 }
 
+// ── Skill Routing ─────────────────────────────────────────────────────────────
 
 function parseOrchestratorReply(text) {
   const lines = text.split('\n');
@@ -118,15 +124,13 @@ async function loadRegistry() {
   routingCandidates = candidates.filter(c => c.file !== ORCHESTRATOR_FILE);
 }
 
+// ── Chat UI ───────────────────────────────────────────────────────────────────
+
 function addMessage(kind, text) {
   const el = document.createElement('div');
   el.className = `msg ${kind}`;
   if (kind === 'assistant' || kind === 'error') {
-    if (window.marked) {
-      el.innerHTML = window.marked.parse(text);
-    } else {
-      el.textContent = text;
-    }
+    el.innerHTML = window.marked ? window.marked.parse(text) : text;
   } else {
     el.textContent = text;
   }
@@ -147,7 +151,6 @@ function addPipelineMessage(inspector, refactor, review) {
   const container = document.createElement('div');
   container.className = 'pipeline-container';
 
-  // 1. Inspector Box
   const boxInspector = document.createElement('div');
   boxInspector.className = 'pipeline-box inspector';
   boxInspector.innerHTML = `
@@ -156,7 +159,6 @@ function addPipelineMessage(inspector, refactor, review) {
   `;
   container.appendChild(boxInspector);
 
-  // 2. Refactor Box
   const boxRefactor = document.createElement('div');
   boxRefactor.className = 'pipeline-box refactor';
   boxRefactor.innerHTML = `
@@ -165,7 +167,6 @@ function addPipelineMessage(inspector, refactor, review) {
   `;
   container.appendChild(boxRefactor);
 
-  // 3. Review Box
   const boxReview = document.createElement('div');
   boxReview.className = 'pipeline-box review';
   boxReview.innerHTML = `
@@ -185,10 +186,8 @@ function addStatus(text) {
   el.className = 'msg status';
   el.innerHTML = `
     <div class="loader-wrap">
-      <div class="lb"></div>
-      <div class="lb"></div>
-      <div class="lb"></div>
-      <div class="lb"></div>
+      <div class="lb"></div><div class="lb"></div>
+      <div class="lb"></div><div class="lb"></div>
     </div>
     <span class="status-text"></span>`;
   el.querySelector('.status-text').textContent = text;
@@ -203,11 +202,138 @@ function setBusy(state) {
   ui.chatInput.disabled = state;
 }
 
+// ── Save / Delete Actions ─────────────────────────────────────────────────────
+
+function addActionButtons(elements, exchangeData) {
+  // Remove any leftover action bar from previous response
+  const existing = ui.messages.querySelector('.msg-actions');
+  if (existing) existing.remove();
+
+  const el = document.createElement('div');
+  el.className = 'msg-actions';
+  el.innerHTML = `
+    <button class="action-btn save-btn" id="save-response-btn">💾 Save</button>
+    <button class="action-btn delete-btn" id="delete-response-btn">🗑 Delete</button>
+  `;
+
+  el.querySelector('#save-response-btn').addEventListener('click', async () => {
+    const saveBtn = el.querySelector('#save-response-btn');
+    const delBtn  = el.querySelector('#delete-response-btn');
+    saveBtn.disabled = true;
+    delBtn.disabled  = true;
+    saveBtn.textContent = 'Saving…';
+
+    try {
+      const user = auth.currentUser;
+      const ref = await db.collection('users').doc(user.uid).collection('saved').add({
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        ...exchangeData
+      });
+      saveBtn.textContent = '✓ Saved!';
+      // Add immediately to the history panel (no reload needed)
+      prependHistoryItem(ref.id, { ...exchangeData, createdAt: new Date() });
+      setTimeout(() => el.remove(), 1200);
+    } catch (e) {
+      saveBtn.textContent = '💾 Save';
+      saveBtn.disabled = false;
+      delBtn.disabled  = false;
+    }
+  });
+
+  el.querySelector('#delete-response-btn').addEventListener('click', () => {
+    elements.filter(Boolean).forEach(e => e && e.remove());
+    el.remove();
+  });
+
+  ui.messages.appendChild(el);
+  ui.messages.scrollTop = ui.messages.scrollHeight;
+  return el;
+}
+
+// ── Saved History Panel ───────────────────────────────────────────────────────
+
+function formatDate(val) {
+  const d = val instanceof Date ? val : (val?.toDate ? val.toDate() : new Date());
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function prependHistoryItem(docId, data) {
+  // Remove "empty" placeholder if present
+  const empty = ui.historyList.querySelector('.history-empty');
+  if (empty) empty.remove();
+
+  const badge    = data.isPipeline ? '⚡ Pipeline' : data.inputType === 'repo' ? '🔬 Repo Doctor' : '💬 Answer';
+  const preview  = (data.userText || '').slice(0, 100) + ((data.userText || '').length > 100 ? '…' : '');
+  const dateStr  = formatDate(data.createdAt);
+
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  item.dataset.docId = docId;
+  item.innerHTML = `
+    <div class="history-item-meta">
+      <span class="history-badge">${badge}</span>
+      <span class="history-date">${dateStr}</span>
+    </div>
+    <p class="history-preview">${preview}</p>
+    <button class="history-delete-btn" title="Delete this saved item">🗑 Delete</button>
+  `;
+
+  item.querySelector('.history-delete-btn').addEventListener('click', async e => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    btn.textContent = 'Deleting…';
+    btn.disabled = true;
+    try {
+      const user = auth.currentUser;
+      await db.collection('users').doc(user.uid).collection('saved').doc(docId).delete();
+      item.remove();
+      if (!ui.historyList.querySelector('.history-item')) {
+        ui.historyList.innerHTML = '<p class="history-empty">No saved analyses yet.</p>';
+      }
+    } catch {
+      btn.textContent = '🗑 Delete';
+      btn.disabled = false;
+    }
+  });
+
+  ui.historyList.insertBefore(item, ui.historyList.firstChild);
+}
+
+async function loadSavedHistory(uid) {
+  ui.historyList.innerHTML = '<p class="history-empty">Loading…</p>';
+  try {
+    const snap = await db.collection('users').doc(uid).collection('saved')
+      .orderBy('createdAt', 'desc').get();
+    ui.historyList.innerHTML = '';
+    if (snap.empty) {
+      ui.historyList.innerHTML = '<p class="history-empty">No saved analyses yet.</p>';
+      return;
+    }
+    snap.forEach(doc => prependHistoryItem(doc.id, doc.data()));
+    // After prepending in order, the list ends up newest-first already
+  } catch {
+    ui.historyList.innerHTML = '<p class="history-empty">Failed to load history.</p>';
+  }
+}
+
+function openHistoryPanel() {
+  const user = auth.currentUser;
+  if (!user) return;
+  ui.historyPanel.classList.remove('hidden');
+  loadSavedHistory(user.uid);
+}
+
+function closeHistoryPanel() {
+  ui.historyPanel.classList.add('hidden');
+}
+
+// ── Quota ─────────────────────────────────────────────────────────────────────
+
 async function consumeQuota(uid) {
   const today = new Date().toISOString().slice(0, 10);
   const ref = db.collection('users').doc(uid).collection('usage').doc(today);
   try {
-    await db.runTransaction(async (t) => {
+    await db.runTransaction(async t => {
       const snap = await t.get(ref);
       const count = snap.exists ? (snap.data().count || 0) : 0;
       if (count >= APP_CONFIG.DAILY_REQUEST_LIMIT) throw new Error('LIMIT_REACHED');
@@ -223,19 +349,15 @@ async function consumeQuota(uid) {
 
 async function updateQuotaLabel() {
   if (!auth.currentUser) return;
-  const uid = auth.currentUser.uid;
+  const uid   = auth.currentUser.uid;
   const today = new Date().toISOString().slice(0, 10);
-  const snap = await db.collection('users').doc(uid).collection('usage').doc(today).get();
-  const used = snap.exists ? (snap.data().count || 0) : 0;
-  const left = Math.max(0, APP_CONFIG.DAILY_REQUEST_LIMIT - used);
+  const snap  = await db.collection('users').doc(uid).collection('usage').doc(today).get();
+  const used  = snap.exists ? (snap.data().count || 0) : 0;
+  const left  = Math.max(0, APP_CONFIG.DAILY_REQUEST_LIMIT - used);
   ui.quotaLabel.textContent = `${left} of ${APP_CONFIG.DAILY_REQUEST_LIMIT} requests left today`;
 }
 
-function saveMessage(uid, doc) {
-  return db.collection('users').doc(uid).collection('messages').add(
-    Object.assign({ createdAt: firebase.firestore.FieldValue.serverTimestamp() }, doc)
-  );
-}
+// ── Send Handler ──────────────────────────────────────────────────────────────
 
 async function handleSend(text) {
   if (busy) return;
@@ -249,20 +371,18 @@ async function handleSend(text) {
   }
 
   setBusy(true);
-  addMessage('user', trimmed);
+  const userMsgEl = addMessage('user', trimmed);
   ui.chatInput.value = '';
 
   const statusEl = addStatus('Routing your request…');
 
   try {
     const inputType = detectInputType(trimmed);
-    await saveMessage(user.uid, { role: 'user', text: trimmed, inputType });
 
     if (inputType !== 'repo' && inputType !== 'snippet') {
       statusEl.remove();
-      const errMsg = "Hmm, that doesn't look like a code snippet or a valid GitHub URL. Paste your code, or use a link like: https://github.com/owner/repo";
-      addMessage('error', errMsg);
-      await saveMessage(user.uid, { role: 'error', text: errMsg, inputType });
+      userMsgEl.remove();
+      addMessage('error', "That doesn't look like a code snippet or a valid GitHub URL. Paste your code, or use a link like: https://github.com/owner/repo");
       setBusy(false);
       return;
     }
@@ -275,6 +395,7 @@ async function handleSend(text) {
     }
 
     if (inputType === 'snippet') {
+      // ── Pipeline: Inspect → Refactor → Review ──
       statusEl.querySelector('.status-text').textContent = 'Step 1/3: Inspecting code health…';
       const inspectorPrompt = await fetchText('skills/code-inspector-agent.md');
       const inspectorOutput = await callGemini(inspectorPrompt, trimmed);
@@ -282,59 +403,55 @@ async function handleSend(text) {
       statusEl.querySelector('.status-text').textContent = 'Step 2/3: Refactoring code…';
       const refactorPrompt = await fetchText('skills/refactor-agent.md');
       const refactorUserPrompt = [
-        "Original code snippet:\n",
-        "```\n" + trimmed + "\n```",
-        "\nStatic analysis report from Code Inspector Agent:\n",
+        'Original code snippet:\n',
+        '```\n' + trimmed + '\n```',
+        '\nStatic analysis report from Code Inspector Agent:\n',
         inspectorOutput,
-        "\nPlease refactor the code based on the analysis report and your instructions. Return only the refactored code and the changes summary."
+        '\nPlease refactor the code based on the analysis report and your instructions. Return only the refactored code and the changes summary.'
       ].join('\n');
       const refactorOutput = await callGemini(refactorPrompt, refactorUserPrompt);
 
       statusEl.querySelector('.status-text').textContent = 'Step 3/3: Comparing & reviewing changes…';
       const reviewPrompt = await fetchText('skills/review-agent.md');
       const reviewUserPrompt = [
-        "Original code snippet:\n",
-        "```\n" + trimmed + "\n```",
-        "\nRefactored code:\n",
+        'Original code snippet:\n',
+        '```\n' + trimmed + '\n```',
+        '\nRefactored code:\n',
         refactorOutput,
-        "\nPlease compare the original code against the refactored code and write a structured review report."
+        '\nPlease compare the original code against the refactored code and write a structured review report.'
       ].join('\n');
       const reviewOutput = await callGemini(reviewPrompt, reviewUserPrompt);
 
       statusEl.remove();
-      addPipelineMessage(inspectorOutput, refactorOutput, reviewOutput);
+      const pipelineEl = addPipelineMessage(inspectorOutput, refactorOutput, reviewOutput);
 
-      await saveMessage(user.uid, {
-        role: 'assistant',
-        text: 'Pipeline analysis complete.',
-        inputType,
-        isPipeline: true,
-        inspectorOutput,
-        refactorOutput,
-        reviewOutput
-      });
+      addActionButtons(
+        [userMsgEl, pipelineEl],
+        { userText: trimmed, inputType, isPipeline: true, inspectorOutput, refactorOutput, reviewOutput }
+      );
+
     } else {
+      // ── Repo / Skill routing ──
       const orchestratorPrompt = await fetchText(ORCHESTRATOR_FILE);
-      const orchestratorReply = await callGemini(orchestratorPrompt, trimmed);
+      const orchestratorReply  = await callGemini(orchestratorPrompt, trimmed);
       const parsed = parseOrchestratorReply(orchestratorReply);
 
       if (parsed.type === 'clarify') {
         statusEl.remove();
         addMessage('routing-line', 'Clarifying…');
         addMessage('assistant', orchestratorReply);
-        await saveMessage(user.uid, { role: 'assistant', text: orchestratorReply, inputType });
         return;
       }
 
       const skill = findRoutedSkill(parsed.label);
       if (!skill) {
         statusEl.remove();
-        addMessage('error', `I couldn't determine which specialist handles that. Please rephrase your request.`);
+        addMessage('error', "I couldn't determine which specialist handles that. Please rephrase your request.");
         return;
       }
 
       statusEl.querySelector('.status-text').textContent = 'Analyzing…';
-      addMessage('routing-line', parsed.line);
+      const routingLineEl = addMessage('routing-line', parsed.line);
 
       let userContent = trimmed;
       const repoUrl = extractGithubUrl(trimmed);
@@ -353,14 +470,12 @@ async function handleSend(text) {
       const result = await callGemini(skillPrompt, userContent);
 
       statusEl.remove();
-      addMessage('assistant', result);
-      await saveMessage(user.uid, {
-        role: 'assistant',
-        text: result,
-        inputType,
-        routedSkill: skill.name,
-        routingLine: parsed.line
-      });
+      const responseEl = addMessage('assistant', result);
+
+      addActionButtons(
+        [userMsgEl, routingLineEl, responseEl],
+        { userText: trimmed, inputType, isPipeline: false, aiText: result, routingLine: parsed.line, routedSkill: skill.name }
+      );
     }
   } catch (err) {
     statusEl.remove();
@@ -370,53 +485,31 @@ async function handleSend(text) {
   }
 }
 
-function renderHistory(snap) {
-  ui.messages.innerHTML = '';
-  snap.forEach(doc => {
-    const d = doc.data();
-    if (d.routingLine) addMessage('routing-line', d.routingLine);
-    if (d.isPipeline) {
-      addPipelineMessage(d.inspectorOutput, d.refactorOutput, d.reviewOutput);
-    } else {
-      let kind = 'assistant';
-      if (d.role === 'user') kind = 'user';
-      else if (d.role === 'error') kind = 'error';
-      addMessage(kind, d.text);
-    }
-  });
-  ui.messages.scrollTop = ui.messages.scrollHeight;
-}
-
-function subscribeMessages(uid) {
-  if (snapshotUnsub) snapshotUnsub();
-  snapshotUnsub = db.collection('users').doc(uid).collection('messages')
-    .orderBy('createdAt', 'asc')
-    .onSnapshot(renderHistory, () => {});
-}
+// ── View Transitions ──────────────────────────────────────────────────────────
 
 function showChat(user) {
   ui.authView.classList.add('hidden');
   ui.chatView.classList.remove('hidden');
   ui.userEmail.textContent = user.email;
-  subscribeMessages(user.uid);
+  ui.messages.innerHTML = ''; // Session-only — fresh empty chat on every sign-in
   updateQuotaLabel();
 }
 
 function showAuth() {
   ui.chatView.classList.add('hidden');
+  ui.historyPanel.classList.add('hidden');
   ui.authView.classList.remove('hidden');
-  if (snapshotUnsub) {
-    snapshotUnsub();
-    snapshotUnsub = null;
-  }
+  ui.messages.innerHTML = '';
 }
+
+// ── Auth Form ─────────────────────────────────────────────────────────────────
 
 function handleAuthForm(e) {
   e.preventDefault();
-  const email = ui.authEmail.value.trim();
+  const email    = ui.authEmail.value.trim();
   const password = ui.authPassword.value;
   const isSignup = ui.tabSignup.classList.contains('active');
-  const promise = isSignup
+  const promise  = isSignup
     ? auth.createUserWithEmailAndPassword(email, password)
     : auth.signInWithEmailAndPassword(email, password);
   ui.authError.classList.add('hidden');
@@ -424,22 +517,22 @@ function handleAuthForm(e) {
   promise
     .catch(err => {
       let msg = 'Unable to log in. Please check your details.';
-      if (err.code === 'auth/email-already-in-use') msg = 'That email is already registered. Log in instead.';
+      if (err.code === 'auth/email-already-in-use')                             msg = 'That email is already registered. Log in instead.';
       if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') msg = 'Incorrect email or password.';
-      if (err.code === 'auth/invalid-email') msg = 'Please enter a valid email address.';
-      if (err.code === 'auth/weak-password') msg = 'Password must be at least 6 characters.';
+      if (err.code === 'auth/invalid-email')                                    msg = 'Please enter a valid email address.';
+      if (err.code === 'auth/weak-password')                                    msg = 'Password must be at least 6 characters.';
       ui.authError.textContent = msg;
       ui.authError.classList.remove('hidden');
     })
-    .finally(() => {
-      ui.authSubmit.disabled = false;
-    });
+    .finally(() => { ui.authSubmit.disabled = false; });
 }
+
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 function init() {
   firebase.initializeApp(APP_CONFIG.FIREBASE);
   auth = firebase.auth();
-  db = firebase.firestore();
+  db   = firebase.firestore();
 
   ui.tabLogin.addEventListener('click', () => {
     ui.tabLogin.classList.add('active');
@@ -451,9 +544,11 @@ function init() {
     ui.tabLogin.classList.remove('active');
     ui.authSubmit.textContent = 'Sign up';
   });
+
   ui.authForm.addEventListener('submit', handleAuthForm);
   ui.signoutBtn.addEventListener('click', () => auth.signOut());
-  ui.chatForm.addEventListener('submit', (e) => {
+
+  ui.chatForm.addEventListener('submit', e => {
     e.preventDefault();
     handleSend(ui.chatInput.value);
   });
@@ -461,6 +556,9 @@ function init() {
     ui.chatInput.style.height = 'auto';
     ui.chatInput.style.height = Math.min(ui.chatInput.scrollHeight, 200) + 'px';
   });
+
+  ui.historyBtn.addEventListener('click', openHistoryPanel);
+  ui.closeHistoryBtn.addEventListener('click', closeHistoryPanel);
 
   loadRegistry().catch(() => {
     addMessage('error', 'Failed to load the skill registry.');
