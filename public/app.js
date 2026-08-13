@@ -231,7 +231,7 @@ function addActionButtons(elements, exchangeData) {
       });
       saveBtn.textContent = '✓ Saved!';
       // Add immediately to the history panel (no reload needed)
-      prependHistoryItem(ref.id, { ...exchangeData, createdAt: new Date() });
+      renderHistoryItem(ref.id, { ...exchangeData, createdAt: new Date() }, true);
       setTimeout(() => el.remove(), 1200);
     } catch (e) {
       saveBtn.textContent = '💾 Save';
@@ -252,37 +252,103 @@ function addActionButtons(elements, exchangeData) {
 
 // ── Saved History Panel ───────────────────────────────────────────────────────
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function formatDate(val) {
   const d = val instanceof Date ? val : (val?.toDate ? val.toDate() : new Date());
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function prependHistoryItem(docId, data) {
-  // Remove "empty" placeholder if present
-  const empty = ui.historyList.querySelector('.history-empty');
-  if (empty) empty.remove();
-
-  const badge    = data.isPipeline ? '⚡ Pipeline' : data.inputType === 'repo' ? '🔬 Repo Doctor' : '💬 Answer';
-  const preview  = (data.userText || '').slice(0, 100) + ((data.userText || '').length > 100 ? '…' : '');
-  const dateStr  = formatDate(data.createdAt);
+function createHistoryItemElement(docId, data) {
+  const badge = data.isPipeline ? '⚡ Pipeline' : data.inputType === 'repo' ? '🔬 Repo Doctor' : '💬 Answer';
+  const dateStr = formatDate(data.createdAt);
 
   const item = document.createElement('div');
-  item.className = 'history-item';
+  item.className = 'history-item expanded';
   item.dataset.docId = docId;
+
+  // Render User Input Code/Question
+  const userTextHtml = data.userText ? `
+    <div class="history-section">
+      <div class="history-section-title">👤 Input Code / Question</div>
+      <div class="history-code-block"><pre><code>${escapeHtml(data.userText)}</code></pre></div>
+    </div>` : '';
+
+  // Render AI Output
+  let aiOutputHtml = '';
+  if (data.isPipeline) {
+    aiOutputHtml = `
+      <div class="history-section">
+        <div class="history-section-title">⚡ Doctor Triage Pipeline Report</div>
+        <div class="history-pipeline-box inspector">
+          <div class="hp-box-title">🔍 Code Inspector Report</div>
+          <div class="hp-box-content">${window.marked ? window.marked.parse(data.inspectorOutput || '') : escapeHtml(data.inspectorOutput || '')}</div>
+        </div>
+        <div class="history-pipeline-box refactor">
+          <div class="hp-box-title">🛠️ Refactored Code</div>
+          <div class="hp-box-content">${window.marked ? window.marked.parse(data.refactorOutput || '') : escapeHtml(data.refactorOutput || '')}</div>
+        </div>
+        <div class="history-pipeline-box review">
+          <div class="hp-box-title">📝 Review & Verdict Report</div>
+          <div class="hp-box-content">${window.marked ? window.marked.parse(data.reviewOutput || '') : escapeHtml(data.reviewOutput || '')}</div>
+        </div>
+      </div>
+    `;
+  } else if (data.aiText) {
+    aiOutputHtml = `
+      <div class="history-section">
+        <div class="history-section-title">🤖 AI Diagnosis</div>
+        <div class="history-ai-content">${window.marked ? window.marked.parse(data.aiText) : escapeHtml(data.aiText)}</div>
+      </div>
+    `;
+  }
+
   item.innerHTML = `
-    <div class="history-item-meta">
-      <span class="history-badge">${badge}</span>
-      <span class="history-date">${dateStr}</span>
+    <div class="history-item-header">
+      <div class="history-item-meta">
+        <span class="history-badge">${badge}</span>
+        <span class="history-date">${dateStr}</span>
+      </div>
+      <div class="history-item-actions">
+        <button class="history-toggle-btn" type="button">Collapse</button>
+        <button class="history-delete-btn" type="button" title="Delete this saved item">🗑 Delete</button>
+      </div>
     </div>
-    <p class="history-preview">${preview}</p>
-    <button class="history-delete-btn" title="Delete this saved item">🗑 Delete</button>
+    <div class="history-item-body">
+      ${userTextHtml}
+      ${aiOutputHtml}
+    </div>
   `;
 
-  item.querySelector('.history-delete-btn').addEventListener('click', async e => {
+  // Toggle Collapse / Expand
+  const toggleBtn = item.querySelector('.history-toggle-btn');
+  const bodyEl = item.querySelector('.history-item-body');
+  toggleBtn.addEventListener('click', () => {
+    const isExpanded = item.classList.contains('expanded');
+    if (isExpanded) {
+      item.classList.remove('expanded');
+      bodyEl.style.display = 'none';
+      toggleBtn.textContent = 'Expand';
+    } else {
+      item.classList.add('expanded');
+      bodyEl.style.display = 'block';
+      toggleBtn.textContent = 'Collapse';
+    }
+  });
+
+  // Delete Action
+  const delBtn = item.querySelector('.history-delete-btn');
+  delBtn.addEventListener('click', async e => {
     e.stopPropagation();
-    const btn = e.currentTarget;
-    btn.textContent = 'Deleting…';
-    btn.disabled = true;
+    delBtn.textContent = 'Deleting…';
+    delBtn.disabled = true;
     try {
       const user = auth.currentUser;
       await db.collection('users').doc(user.uid).collection('saved').doc(docId).delete();
@@ -291,16 +357,28 @@ function prependHistoryItem(docId, data) {
         ui.historyList.innerHTML = '<p class="history-empty">No saved analyses yet.</p>';
       }
     } catch {
-      btn.textContent = '🗑 Delete';
-      btn.disabled = false;
+      delBtn.textContent = '🗑 Delete';
+      delBtn.disabled = false;
     }
   });
 
-  ui.historyList.insertBefore(item, ui.historyList.firstChild);
+  return item;
+}
+
+function renderHistoryItem(docId, data, atTop = false) {
+  const empty = ui.historyList.querySelector('.history-empty');
+  if (empty) empty.remove();
+
+  const item = createHistoryItemElement(docId, data);
+  if (atTop) {
+    ui.historyList.insertBefore(item, ui.historyList.firstChild);
+  } else {
+    ui.historyList.appendChild(item);
+  }
 }
 
 async function loadSavedHistory(uid) {
-  ui.historyList.innerHTML = '<p class="history-empty">Loading…</p>';
+  ui.historyList.innerHTML = '<p class="history-empty">Loading saved history…</p>';
   try {
     const snap = await db.collection('users').doc(uid).collection('saved')
       .orderBy('createdAt', 'desc').get();
@@ -309,9 +387,8 @@ async function loadSavedHistory(uid) {
       ui.historyList.innerHTML = '<p class="history-empty">No saved analyses yet.</p>';
       return;
     }
-    snap.forEach(doc => prependHistoryItem(doc.id, doc.data()));
-    // After prepending in order, the list ends up newest-first already
-  } catch {
+    snap.forEach(doc => renderHistoryItem(doc.id, doc.data(), false));
+  } catch (err) {
     ui.historyList.innerHTML = '<p class="history-empty">Failed to load history.</p>';
   }
 }
@@ -322,6 +399,7 @@ function openHistoryPanel() {
   ui.historyPanel.classList.remove('hidden');
   loadSavedHistory(user.uid);
 }
+
 
 function closeHistoryPanel() {
   ui.historyPanel.classList.add('hidden');
