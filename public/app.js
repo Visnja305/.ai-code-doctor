@@ -597,16 +597,44 @@ async function handleSend(text) {
 
 async function ensureUserDoc(user) {
   if (!user || !user.email) return;
-  const userKey = user.email.toLowerCase();
+  const emailKey = user.email.toLowerCase();
+  const uidKey   = user.uid;
+
   try {
-    const userDocRef = db.collection('users').doc(userKey);
-    await userDocRef.set({
+    // 1. Create/Update top-level user document with email as document ID
+    const emailRef = db.collection('users').doc(emailKey);
+    await emailRef.set({
       email: user.email,
       uid: user.uid,
-      lastLoginAt: firebase.firestore.FieldValue.serverTimestamp()
+      lastLoginAt: new Date()
     }, { merge: true });
+
+    // 2. Migrate legacy UID documents to email document if UID !== emailKey
+    if (uidKey && uidKey !== emailKey) {
+      try {
+        const uidSavedSnap = await db.collection('users').doc(uidKey).collection('saved').get();
+        if (!uidSavedSnap.empty) {
+          for (const doc of uidSavedSnap.docs) {
+            await emailRef.collection('saved').doc(doc.id).set(doc.data(), { merge: true });
+            await doc.ref.delete();
+          }
+        }
+
+        const uidUsageSnap = await db.collection('users').doc(uidKey).collection('usage').get();
+        if (!uidUsageSnap.empty) {
+          for (const doc of uidUsageSnap.docs) {
+            await emailRef.collection('usage').doc(doc.id).set(doc.data(), { merge: true });
+            await doc.ref.delete();
+          }
+        }
+
+        await db.collection('users').doc(uidKey).delete().catch(() => {});
+      } catch (e) {
+        console.warn('Legacy migration notice:', e);
+      }
+    }
   } catch (e) {
-    console.error('Error creating user doc:', e);
+    console.error('Error creating user doc in Firestore:', e);
   }
 }
 
