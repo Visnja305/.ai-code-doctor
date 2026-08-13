@@ -1,4 +1,5 @@
 .env
+public/app-config.js
 
 *credentials*
 *secret*

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Code Doctor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="auth-view" class="auth-view hidden">
+    <div class="auth-card">
+      <div class="logo">
+        <div class="logo-mark">+</div>
+        <h1>AI Code Doctor</h1>
+        <p>Inspect, refactor, review, or diagnose your code.</p>
+      </div>
+      <div class="auth-tabs">
+        <button id="tab-login" class="auth-tab active" type="button">Log in</button>
+        <button id="tab-signup" class="auth-tab" type="button">Sign up</button>
+      </div>
+      <form id="auth-form" novalidate>
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" autocomplete="email" required />
+        <label for="auth-password">Password</label>
+        <input id="auth-password" type="password" autocomplete="current-password" required minlength="6" />
+        <p id="auth-error" class="error-text hidden"></p>
+        <button id="auth-submit" class="primary-btn" type="submit">Log in</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="chat-view" class="chat-view hidden">
+    <header class="chat-header">
+      <div class="chat-title">
+        <div class="logo-mark small">+</div>
+        <span>AI Code Doctor</span>
+      </div>
+      <div class="chat-actions">
+        <span id="quota-label" class="quota"></span>
+        <span id="user-email" class="user-email"></span>
+        <button id="signout-btn" class="ghost-btn" type="button">Sign out</button>
+      </div>
+    </header>
+    <main id="messages" class="messages" aria-live="polite"></main>
+    <form id="chat-form" class="chat-form">
+      <textarea id="chat-input" rows="1" placeholder="Paste a code snippet, a public GitHub repo URL, or ask about your code…"></textarea>
+      <button id="send-btn" class="primary-btn" type="submit">Send</button>
+    </form>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="app-config.js"></script>
+  <script src="githubRepoFetcher.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

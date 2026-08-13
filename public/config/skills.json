@@ -1,0 +1,76 @@
+{
+  "skills": [
+    {
+      "name": "skill_builder",
+      "description": "Builds new reusable skills by writing system prompts and registering them in the skill registry.",
+      "trigger_phrases": [
+        "create a new skill",
+        "build me a skill",
+        "add a new capability",
+        "teach the agent something new",
+        "I need a new skill"
+      ],
+      "file": "skills/skill_builder.md"
+    },
+    {
+      "name": "orchestrator",
+      "description": "Routes user requests to the right skill and sequences multi-step workflows across agents.",
+      "trigger_phrases": [
+        "start the workflow",
+        "coordinate the agents",
+        "run the whole thing",
+        "orchestrate this",
+        "string these skills together"
+      ],
+      "file": "skills/orchestrator.md"
+    },
+    {
+      "name": "code-inspector-agent",
+      "description": "Read-only static analysis that inspects source files and produces a health report: bugs, inefficiencies, security issues, bad practices, convention checks, and a 1-10 quality score.",
+      "trigger_phrases": [
+        "inspect this code",
+        "analyze code health",
+        "review code quality",
+        "check for bugs",
+        "audit this repository"
+      ],
+      "file": "skills/code-inspector-agent.md"
+    },
+    {
+      "name": "refactor-agent",
+      "description": "Improves source code quality without changing behavior; rewrites inefficient code, removes duplication, simplifies logic, improves readability, and suggests better architecture and design patterns.",
+      "trigger_phrases": [
+        "refactor this file",
+        "clean up this code",
+        "improve this code",
+        "simplify this logic",
+        "deduplicate this code"
+      ],
+      "file": "skills/refactor-agent.md"
+    },
+    {
+      "name": "review-agent",
+      "description": "Compares original and improved code, explains every change in plain English, estimates performance impact, suggests further improvements, and generates a structured review report.",
+      "trigger_phrases": [
+        "review changes",
+        "compare original and improved code",
+        "explain why this change matters",
+        "generate review report",
+        "what did this refactor change"
+      ],
+      "file": "skills/review-agent.md"
+    },
+    {
+      "name": "repo-doctor",
+      "description": "Diagnoses a full-stack app repo and returns a prioritized, actionable fix list so the app becomes functional. Use when the user pastes a GitHub repo URL or bundled codebase and asks why it's broken, why it won't run, or what needs to be fixed.",
+      "trigger_phrases": [
+        "why doesn't this app run",
+        "this repo is broken",
+        "fix my repository",
+        "diagnose this project",
+        "what's wrong with my app"
+      ],
+      "file": "skills/repo_doctor_skill.md"
+    }
+  ]
+}

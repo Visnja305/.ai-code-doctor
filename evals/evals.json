@@ -1,0 +1,23 @@
+{
+  "skill_name": "code-inspector-agent",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "inspect evals/fixtures/python_sample.py",
+      "expected_output": "Report flags SQL injection via string concatenation as Critical, division by zero risk, swallowed exception in load_config, unused os import, and the quadratic loop in process_data. Score below 10 with a stated rubric.",
+      "files": ["evals/fixtures/python_sample.py"]
+    },
+    {
+      "id": 2,
+      "prompt": "inspect evals/fixtures/js_sample.js --fail-below 7",
+      "expected_output": "Report flags XSS via innerHTML as High/Critical, == instead of ===, var usage and missing semicolons as convention issues. Exits non-zero because score is below 7.",
+      "files": ["evals/fixtures/js_sample.js"]
+    },
+    {
+      "id": 3,
+      "prompt": "audit this repository",
+      "expected_output": "Repo-wide report across all analyzable files: quality score (X/10), file count, findings sorted by severity, convention check, and score breakdown per file.",
+      "files": []
+    }
+  ]
+}
