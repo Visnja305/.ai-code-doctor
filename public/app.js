@@ -204,6 +204,11 @@ function setBusy(state) {
 
 // ── Save / Delete Actions ─────────────────────────────────────────────────────
 
+function getUserKey(user) {
+  if (!user) return null;
+  return user.email || user.uid;
+}
+
 function addActionButtons(elements, exchangeData) {
   // Remove any leftover action bar from previous response
   const existing = ui.messages.querySelector('.msg-actions');
@@ -225,10 +230,11 @@ function addActionButtons(elements, exchangeData) {
 
     try {
       const user = auth.currentUser;
-      const ref = await db.collection('users').doc(user.uid).collection('saved').add({
+      const ref = await db.collection('users').doc(getUserKey(user)).collection('saved').add({
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         ...exchangeData
       });
+
       saveBtn.textContent = '✓ Saved!';
       renderHistoryItem(ref.id, { ...exchangeData, createdAt: new Date() }, true);
       setTimeout(() => el.remove(), 1200);
@@ -372,7 +378,7 @@ function createHistoryItemElement(docId, data) {
     delBtn.disabled = true;
     try {
       const user = auth.currentUser;
-      await db.collection('users').doc(user.uid).collection('saved').doc(docId).delete();
+      await db.collection('users').doc(getUserKey(user)).collection('saved').doc(docId).delete();
       item.remove();
       if (!ui.historyList.querySelector('.history-item')) {
         ui.historyList.innerHTML = '<p class="history-empty">No saved analyses yet.</p>';
@@ -398,10 +404,10 @@ function renderHistoryItem(docId, data, atTop = false) {
   }
 }
 
-async function loadSavedHistory(uid) {
+async function loadSavedHistory(userKey) {
   ui.historyList.innerHTML = '<p class="history-empty">Loading saved history…</p>';
   try {
-    const snap = await db.collection('users').doc(uid).collection('saved')
+    const snap = await db.collection('users').doc(userKey).collection('saved')
       .orderBy('createdAt', 'desc').get();
     ui.historyList.innerHTML = '';
     if (snap.empty) {
@@ -419,7 +425,7 @@ function openHistoryPanel() {
   const user = auth.currentUser;
   if (!user) return;
   ui.historyPanel.classList.remove('hidden');
-  loadSavedHistory(user.uid);
+  loadSavedHistory(getUserKey(user));
 }
 
 
@@ -429,9 +435,9 @@ function closeHistoryPanel() {
 
 // ── Quota ─────────────────────────────────────────────────────────────────────
 
-async function consumeQuota(uid) {
+async function consumeQuota(userKey) {
   const today = new Date().toISOString().slice(0, 10);
-  const ref = db.collection('users').doc(uid).collection('usage').doc(today);
+  const ref = db.collection('users').doc(userKey).collection('usage').doc(today);
   try {
     await db.runTransaction(async t => {
       const snap = await t.get(ref);
@@ -449,11 +455,11 @@ async function consumeQuota(uid) {
 
 async function updateQuotaLabel() {
   if (!auth.currentUser) return;
-  const uid   = auth.currentUser.uid;
-  const today = new Date().toISOString().slice(0, 10);
-  const snap  = await db.collection('users').doc(uid).collection('usage').doc(today).get();
-  const used  = snap.exists ? (snap.data().count || 0) : 0;
-  const left  = Math.max(0, APP_CONFIG.DAILY_REQUEST_LIMIT - used);
+  const userKey = getUserKey(auth.currentUser);
+  const today   = new Date().toISOString().slice(0, 10);
+  const snap    = await db.collection('users').doc(userKey).collection('usage').doc(today).get();
+  const used    = snap.exists ? (snap.data().count || 0) : 0;
+  const left    = Math.max(0, APP_CONFIG.DAILY_REQUEST_LIMIT - used);
   ui.quotaLabel.textContent = `${left} of ${APP_CONFIG.DAILY_REQUEST_LIMIT} requests left today`;
 }
 
@@ -487,7 +493,8 @@ async function handleSend(text) {
       return;
     }
 
-    const allowed = await consumeQuota(user.uid);
+    const allowed = await consumeQuota(getUserKey(user));
+
     if (!allowed) {
       statusEl.remove();
       addMessage('error', 'You have reached your daily request limit. Come back tomorrow.');
