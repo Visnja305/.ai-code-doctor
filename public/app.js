@@ -594,11 +594,26 @@ async function handleSend(text) {
 
 // ── View Transitions ──────────────────────────────────────────────────────────
 
+async function ensureUserDoc(user) {
+  if (!user || !user.email) return;
+  try {
+    const userDocRef = db.collection('users').doc(user.email);
+    await userDocRef.set({
+      email: user.email,
+      uid: user.uid,
+      lastLoginAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (e) {
+    console.error('Error creating user doc:', e);
+  }
+}
+
 function showChat(user) {
   ui.authView.classList.add('hidden');
   ui.chatView.classList.remove('hidden');
   ui.userEmail.textContent = user.email;
   ui.messages.innerHTML = ''; // Session-only — fresh empty chat on every sign-in
+  ensureUserDoc(user);
   updateQuotaLabel();
 }
 
